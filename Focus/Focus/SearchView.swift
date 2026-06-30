@@ -229,6 +229,7 @@ struct SearchResultCard: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Color.gray.opacity(0.2), lineWidth: 0.5)
         )
+        .contentShape(.interaction, RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
         .scaleEffect(isHovering ? 1.015 : 1)
         .onHover { isHovering = $0 }
@@ -275,6 +276,7 @@ struct MediaCard: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Color.gray.opacity(0.2), lineWidth: 0.5)
         )
+        .contentShape(.interaction, RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
         .scaleEffect(isHovering ? 1.015 : 1)
         .onHover { isHovering = $0 }
