@@ -4,7 +4,11 @@ import Observation
 @Observable
 final class APIClient {
     private let baseURL = "http://127.0.0.1:8000"
-    private let decoder = JSONDecoder()
+    private let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        return d
+    }()
 
     var mediaItems: [MediaItem] = []
     var searchResults: [SearchResult] = []
