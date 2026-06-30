@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.venv/
+venv/
+
+# Database
+*.db
+
+# macOS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Xcode
+Focus/Focus.xcodeproj/xcuserdata/
+Focus/Focus.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+
+# Media (sample images — don't check in)
+media/
