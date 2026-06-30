@@ -12,10 +12,6 @@ struct FocusApp: App {
                 .environment(server)
                 .onAppear {
                     server.start()
-                    Task {
-                        let connected = await api.waitForServer()
-                        print(connected ? "API connected" : "API failed to respond")
-                    }
                 }
                 .onDisappear {
                     server.stop()

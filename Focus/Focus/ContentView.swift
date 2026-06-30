@@ -1,9 +1,11 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(APIClient.self) private var api
     @Environment(ServerManager.self) private var server
     @State private var selectedTab: Tab = .search
+    @State private var showFilePicker = false
 
     enum Tab: String, CaseIterable, Identifiable {
         case search = "Search"
@@ -24,28 +26,163 @@ struct ContentView: View {
             sidebar
                 .navigationSplitViewColumnWidth(min: 60, ideal: 72, max: 72)
         } detail: {
-            switch selectedTab {
-            case .search: SearchView()
-            case .library: LibraryView()
-            }
-        }
-        .toolbar {
-            ToolbarItem {
-                Button {
-                    Task { try? await api.ingest() }
-                } label: {
-                    if api.isIngesting {
-                        ProgressView().scaleEffect(0.7).frame(width: 20, height: 20)
-                    } else {
-                        Label("Ingest", systemImage: "arrow.triangle.2.circlepath")
+            ZStack(alignment: .top) {
+                if !api.hasLoaded && api.mediaItems.isEmpty {
+                    loadingState
+                } else if api.hasLoaded && api.mediaItems.isEmpty && !api.isProcessing {
+                    emptyState
+                } else {
+                    switch selectedTab {
+                    case .search: SearchView()
+                    case .library: LibraryView()
                     }
                 }
-                .help("Scan media folder for new files")
-                .disabled(api.isIngesting)
+
+                // Progress bar banner
+                if api.isProcessing {
+                    progressBanner
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.4), value: api.isProcessing)
+        }
+        .toolbar { toolbarContent }
+        .task {
+            // Fallback: wait for server then fetch media
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            if !api.hasLoaded {
+                let ok = await api.waitForServer(timeout: 12)
+                if ok { try? await api.fetchMedia() }
             }
         }
-        .task { try? await api.fetchMedia() }
+        .fileImporter(
+            isPresented: $showFilePicker,
+            allowedContentTypes: [.folder, .jpeg, .png],
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case .success(let urls):
+                for url in urls {
+                    _ = url.startAccessingSecurityScopedResource()
+                }
+                Task {
+                    try? await api.ingestPaths(urls)
+                    for url in urls {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+            case .failure:
+                break
+            }
+        }
     }
+
+    // MARK: - Empty state
+
+    // MARK: - Progress banner
+
+    private var progressBanner: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Indexing media...")
+                        .font(.subheadline.weight(.medium))
+                    if !api.ingestCurrentFile.isEmpty {
+                        Text(api.ingestCurrentFile)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+                if api.ingestTotal > 0 {
+                    Text("\(api.ingestCompleted)/\(api.ingestTotal)")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+
+            ProgressView(value: api.ingestProgress)
+                .tint(.accentColor)
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.2), lineWidth: 0.5))
+        .padding()
+        .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+    }
+
+    // MARK: - Loading state
+
+    private var loadingState: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            ProgressView()
+                .scaleEffect(1.2)
+            Text("Connecting to server...")
+                .foregroundStyle(.secondary)
+            Button("Retry") {
+                server.start()
+                api.retryFetchMedia()
+            }
+            .buttonStyle(.plain)
+            .font(.subheadline)
+            .foregroundStyle(Color.accentColor)
+            .padding(.top, 4)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Empty state
+
+    private var emptyState: some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            Image(systemName: "photo.on.rectangle.angled")
+                .font(.system(size: 64))
+                .foregroundStyle(.tertiary)
+
+            Text("No Media Yet")
+                .font(.title.weight(.semibold))
+
+            Text("Add folders or images to start building\nyour searchable media library.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .lineSpacing(4)
+
+            Button {
+                showFilePicker = true
+            } label: {
+                Label("Add Folders or Images", systemImage: "plus.circle.fill")
+                    .font(.headline)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 14)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.accentColor)
+
+            if api.isProcessing {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Processing media...")
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 8)
+            }
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(LinearGradient(colors: [.clear, .accentColor.opacity(0.03)], startPoint: .top, endPoint: .bottom))
+    }
+
+    // MARK: - Sidebar
 
     private var sidebar: some View {
         VStack(spacing: 12) {
@@ -81,11 +218,9 @@ struct ContentView: View {
 
             Spacer()
 
-            // Status indicator
             ConnectionStatusView()
                 .padding(.bottom, 12)
 
-            // Server log toggle (debug)
             if let log = server.log.split(separator: "\n").last, !log.isEmpty {
                 Text(log)
                     .font(.system(size: 8))
@@ -97,6 +232,30 @@ struct ContentView: View {
         }
         .padding(.horizontal, 6)
         .background(.ultraThinMaterial)
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                showFilePicker = true
+            } label: {
+                Label("Add", systemImage: "plus")
+            }
+            .help("Add folders or images")
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                // TODO: implement refresh functionality later
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+            .help("Refresh media library")
+            .disabled(true) // placeholder — functionality coming later
+        }
     }
 }
 

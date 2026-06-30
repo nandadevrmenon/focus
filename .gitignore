@@ -28,3 +28,4 @@ DerivedData/
 
 # Media (sample images — don't check in)
 media/
+.thumbs/

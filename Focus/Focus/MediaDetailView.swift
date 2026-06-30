@@ -163,6 +163,7 @@ struct MediaDetailView: View {
         path: "/Users/nanda/Desktop/repos/MediaTag/media/DSC06912.jpg",
         type: "jpg",
         description: "A preview image description showing the detail view layout with glass materials and modern typography.",
-        tags: "preview, demo, sample"
+        tags: "preview, demo, sample",
+        thumbnailPath: ""
     ))
 }

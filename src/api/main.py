@@ -1,9 +1,7 @@
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -12,6 +10,7 @@ from src.backend.db import Database
 from src.backend.models import Config, MediaItem
 from src.backend.ollama_client import OllamaClient
 from src.backend.pipeline import IngestionPipeline
+from src.backend.progress import progress as ingest_progress
 from src.backend.search import SearchEngine
 
 # ----------------------------------------------------------------
@@ -57,10 +56,18 @@ class MediaOut(BaseModel):
     type: str
     description: str
     tags: str
+    thumbnail_path: str = ""
 
     @classmethod
     def from_item(cls, item: MediaItem) -> "MediaOut":
-        return cls(id=item.id, path=item.path, type=item.type, description=item.description, tags=item.tags)
+        return cls(
+            id=item.id,
+            path=item.path,
+            type=item.type,
+            description=item.description,
+            tags=item.tags,
+            thumbnail_path=item.thumbnail_path or "",
+        )
 
 
 class SearchResult(BaseModel):
@@ -68,12 +75,17 @@ class SearchResult(BaseModel):
     path: str
     filename: str
     description: str
+    thumbnail_path: str = ""
 
 
 class IngestResponse(BaseModel):
     message: str
     processed: int
     skipped: int
+
+
+class IngestPathsRequest(BaseModel):
+    paths: list[str]
 
 
 # ----------------------------------------------------------------
@@ -105,43 +117,69 @@ async def get_media(media_id: str):
 async def search(q: str = Query(..., description="Natural language query"),
                  top_k: int = Query(5, ge=1, le=50)):
     results = search_engine.search(q, top_k=top_k)
+    thumb_map = {item.path: item.thumbnail_path for item in db.get_all_media()}
     return [
-        SearchResult(score=score, path=path, filename=Path(path).name, description=desc[:200] + "...")
+        SearchResult(
+            score=score,
+            path=path,
+            filename=Path(path).name,
+            description=desc[:200] + "...",
+            thumbnail_path=thumb_map.get(path, ""),
+        )
         for score, path, desc in results
     ]
 
 
 @app.post("/ingest", response_model=IngestResponse)
 async def ingest():
+    from src.backend.pipeline import SUPPORTED_EXTENSIONS
     images_dir = config.IMAGES_DIR
     if not images_dir.exists():
         raise HTTPException(status_code=404, detail=f"Images folder not found: {images_dir}")
 
-    processed = 0
-    skipped = 0
-
-    for image_path in sorted(images_dir.iterdir()):
-        if image_path.suffix.lower() not in config.IMAGE_EXTENSIONS:
-            continue
-        if db.media_exists(str(image_path)):
-            skipped += 1
-            continue
-        try:
-            description = ai.describe_image(str(image_path))
-            embedding = ai.generate_embedding(description)
-            embedding_blob = np.array(embedding, dtype=np.float32).tobytes()
-
-            item = MediaItem(
-                id=str(uuid.uuid4()),
-                path=str(image_path),
-                type=image_path.suffix.lower().strip("."),
-                description=description,
-                tags="",
-                embedding=embedding_blob,
-            )
-            db.insert_media(item)
-            processed += 1
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error processing {image_path.name}: {e}")
-
+    paths = [p for p in sorted(images_dir.iterdir()) if p.suffix.lower() in SUPPORTED_EXTENSIONS]
+    processed, skipped = pipeline.process_files(paths)
     return IngestResponse(message="Ingestion complete", processed=processed, skipped=skipped)
+
+
+@app.post("/ingest-paths", response_model=IngestResponse)
+async def ingest_paths(body: IngestPathsRequest):
+    from src.backend.pipeline import SUPPORTED_EXTENSIONS
+
+    valid_paths = []
+    invalid = []
+    for p in body.paths:
+        path = Path(p)
+        if not path.exists():
+            invalid.append(f"{p}: not found")
+            continue
+
+        if path.is_dir():
+            for child in sorted(path.rglob("*")):
+                if child.suffix.lower() in SUPPORTED_EXTENSIONS:
+                    valid_paths.append(child)
+            continue
+
+        if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            invalid.append(f"{path.name}: unsupported type (jpg/png only)")
+            continue
+        valid_paths.append(path)
+
+    if not valid_paths:
+        raise HTTPException(status_code=400, detail="; ".join(invalid) if invalid else "No valid files provided")
+
+    processed, skipped = pipeline.process_files(valid_paths)
+    msg = f"Ingestion complete. Processed: {processed}, Skipped: {skipped}"
+    if invalid:
+        msg += f". Errors: {'; '.join(invalid)}"
+    return IngestResponse(message=msg, processed=processed, skipped=skipped)
+
+
+@app.get("/ingest-status")
+async def ingest_status():
+    return {
+        "is_processing": ingest_progress.is_processing,
+        "total": ingest_progress.total,
+        "completed": ingest_progress.completed,
+        "current_file": ingest_progress.current_file,
+    }

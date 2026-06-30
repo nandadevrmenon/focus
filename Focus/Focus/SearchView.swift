@@ -183,7 +183,8 @@ struct SearchResultCard: View {
         VStack(alignment: .leading, spacing: 0) {
             // Thumbnail
             Group {
-                if let nsImage = NSImage(contentsOfFile: result.path) {
+                let imagePath = result.thumbnailPath.isEmpty ? result.path : result.thumbnailPath
+                if let nsImage = NSImage(contentsOfFile: imagePath) {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -244,7 +245,8 @@ struct MediaCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Group {
-                if let nsImage = NSImage(contentsOfFile: item.path) {
+                let imagePath = item.thumbnailPath.isEmpty ? item.path : item.thumbnailPath
+                if let nsImage = NSImage(contentsOfFile: imagePath) {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)

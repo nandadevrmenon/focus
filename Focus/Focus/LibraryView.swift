@@ -113,7 +113,8 @@ struct LibraryRow: View {
         HStack(spacing: 12) {
             // Thumbnail
             Group {
-                if let nsImage = NSImage(contentsOfFile: item.path) {
+                let imagePath = item.thumbnailPath.isEmpty ? item.path : item.thumbnailPath
+                if let nsImage = NSImage(contentsOfFile: imagePath) {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
