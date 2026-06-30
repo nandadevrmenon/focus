@@ -24,6 +24,7 @@ struct LibraryView: View {
             listSidebar
             detailPane
         }
+        .onExitCommand { selectedItem = nil }
     }
 
     // MARK: - List sidebar

@@ -4,21 +4,28 @@ struct SearchView: View {
     @Environment(APIClient.self) private var api
     @State private var query = ""
     @State private var isSearching = false
+    @State private var detailItem: MediaItem?
     @FocusState private var isFocused: Bool
 
     private let columns = [GridItem(.adaptive(minimum: 280), spacing: 16)]
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Search bar
-            searchBar
-                .padding(.horizontal)
-                .padding(.vertical, 16)
-
-            // Content
-            content
+        ZStack {
+            if let item = detailItem {
+                MediaDetailView(item: item)
+                    .transition(.opacity)
+            } else {
+                VStack(spacing: 0) {
+                    searchBar
+                        .padding(.horizontal)
+                        .padding(.vertical, 16)
+                    content
+                }
+                .background(backgroundGradient)
+            }
         }
-        .background(backgroundGradient)
+        .animation(.easeInOut(duration: 0.2), value: detailItem != nil)
+        .onExitCommand { detailItem = nil }
     }
 
     // MARK: - Search bar
@@ -126,12 +133,8 @@ struct SearchView: View {
 
                 LazyVGrid(columns: columns, spacing: 16) {
                     ForEach(api.mediaItems) { item in
-                        NavigationLink {
-                            MediaDetailView(item: item)
-                        } label: {
-                            MediaCard(item: item)
-                        }
-                        .buttonStyle(.plain)
+                        MediaCard(item: item)
+                            .onTapGesture { detailItem = item }
                     }
                 }
                 .padding()

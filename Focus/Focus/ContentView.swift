@@ -264,6 +264,7 @@ struct ContentView: View {
 struct ConnectionStatusView: View {
     @Environment(APIClient.self) private var api
     @Environment(ServerManager.self) private var server
+    @State private var isHovering = false
 
     var body: some View {
         Button {
@@ -278,14 +279,19 @@ struct ConnectionStatusView: View {
                 Circle()
                     .fill(indicatorColor)
                     .frame(width: 8, height: 8)
-                Text(statusText)
-                    .font(.caption2)
+                if isHovering {
+                    Text(statusText)
+                        .font(.caption2)
+                        .transition(.opacity)
+                }
             }
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .help(tapHelp)
         .onAppear { Task { await api.checkConnection() } }
+        .onHover { isHovering = $0 }
+        .animation(.easeInOut(duration: 0.15), value: isHovering)
     }
 
     private var indicatorColor: Color {
